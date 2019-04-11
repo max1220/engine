@@ -13,7 +13,7 @@ local menu = {
 	{
 		"Start game",
 		function()
-			print("start game selected")
+			engine:change_stage("game")
 		end
 	},
 	{

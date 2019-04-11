@@ -1,6 +1,6 @@
 local ldb = require("lua-db")
-local lfb = require("lua-fb")
-local sdl2fb = require("sdl2fb")
+local lfb
+local sdl2fb
 local time = require("time")
 local input = require("lua-input")
 
@@ -126,10 +126,12 @@ function Engine.new(stage, config)
 	elseif config.output.type == "blocks" then
 		output = output_blocks
 	elseif config.output.type:match("^fb=(.*)$") then
+		lfb = require("lua-fb")
 		fb_dev = lfb.new(config.output.type:match("^fb=(.*)$"))
 		fb_info = fb_dev:get_varinfo()
 		output = output_fb
 	elseif config.output.type == "sdl2fb" then
+		sdl2fb = require("sdl2fb")
 		sdl_window = sdl2fb.new(config.output.width*config.output.scale, config.output.height*config.output.scale, "engine")
 		output = output_sdl2
 	else

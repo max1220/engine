@@ -7,7 +7,7 @@ local title_dir = 1
 local title_x = 0
 local title_speed = 10 -- in pixels per second
 local width, height
-
+local engine
 
 local menu = {
 	{
@@ -26,7 +26,7 @@ local menu = {
 		"Exit",
 		function()
 			print("exit selected")
-			os.exit()
+			engine.run = false
 		end
 	}
 }
@@ -96,6 +96,8 @@ function menu:init()
 	self:set_input_callback(input.event_codes.KEY_UP, on_key_up)
 	self:set_input_callback(input.event_codes.KEY_DOWN, on_key_down)
 	self:set_input_callback(input.event_codes.KEY_ENTER, on_key_enter)
+	
+	engine = self
 	
 	print("loaded menu stage!")
 end

@@ -1,5 +1,6 @@
 local ldb = require("lua-db")
 local lfb = require("lua-fb")
+local sdl2fb = require("sdl2fb")
 local time = require("time")
 local input = require("lua-input")
 
@@ -98,6 +99,12 @@ function Engine.new(stage, config)
 	end
 	
 	
+	-- final output to the sdl2 window
+	local sdl_window
+	local function output_sdl2(db)
+		sdl_window:draw_from_drawbuffer(db, 0, 0)
+	end
+	
 	-- final output to the framebuffer
 	local fb_dev
 	local fb_info
@@ -116,6 +123,9 @@ function Engine.new(stage, config)
 		fb_dev = lfb.new(config.output.type:match("^fb=(.*)$"))
 		fb_info = fb_dev:get_varinfo()
 		output = output_fb
+	elseif config.output.type == "sdl2fb" then
+		sdl_window = sdl2fb.new(config.output.width, config.output.height, "engine")
+		output = output_sdl2
 	else
 		error("Unsupported output! Check config")
 	end
@@ -145,6 +155,14 @@ function Engine.new(stage, config)
 			while ev do
 				handler(ev, config)
 				ev = dev:read()
+			end
+		end
+		
+		-- if we have a sdl2 window, check for events
+		if sdl_window then
+			local ev = sdl_window:pool_event()
+			if ev and ev.type == "quit" then
+				self.run = false
 			end
 		end
 	end
@@ -188,10 +206,15 @@ function Engine.new(stage, config)
 		self:init()
 		self.run = true
 		self:_loop()
+		
+		-- loop has terminated, call cleanup
+		self:stop()
 	end
 
 	function stage:stop()
-		
+		if sdl_window then
+			sdl_window:close()
+		end
 	end
 	
 	

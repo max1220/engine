@@ -18,11 +18,17 @@ function Engine.new(stage, config)
 	local out_db = ldb.new(config.output.width, config.output.height)
 
 	-- called when an input is received from a uinput keyboard
+	local key_state = {}
 	local input_callbacks = {}
 	local function handle_uinput_keyboard_ev(ev, config)
 		if ev.type == input.event_codes.EV_KEY then
 			if input_callbacks[ev.code] then
 				input_callbacks[ev.code](ev)
+			end
+			if ev.value ~= 0 then
+				key_state[ev.code] = ev.value
+			else
+				key_state[ev.code] = nil
 			end
 		end
 	end
@@ -124,13 +130,28 @@ function Engine.new(stage, config)
 		fb_info = fb_dev:get_varinfo()
 		output = output_fb
 	elseif config.output.type == "sdl2fb" then
-		sdl_window = sdl2fb.new(config.output.width, config.output.height, "engine")
+		sdl_window = sdl2fb.new(config.output.width*config.output.scale, config.output.height*config.output.scale, "engine")
 		output = output_sdl2
 	else
 		error("Unsupported output! Check config")
 	end
 	
 
+	-- load an image by file name(determine decoder automatically)
+	local img_cache = {}
+	function stage:load_img(file_path)
+		if img_cache[file_path] then
+			return img_cache[file_path]
+		end
+		local file_type = file_path:sub(-4)
+		local db
+		if file_type == ".bmp" then
+			db = ldb.bitmap.decode_from_file_drawbuffer("img/" .. file_path)
+		elseif file_type == ".ppm" then
+			db = ldb.ppm.decode_from_file_drawbuffer("img/" .. file_path)
+		end
+		return db
+	end
 
 	-- loads a font by it's filename
 	function stage:load_font(font_name)
@@ -165,6 +186,11 @@ function Engine.new(stage, config)
 				self.run = false
 			end
 		end
+	end
+	
+	
+	function stage:key_is_down(key)
+		return key_state[key]
 	end
 	
 	
@@ -212,9 +238,26 @@ function Engine.new(stage, config)
 	end
 
 	function stage:stop()
+		self.run = false
 		if sdl_window then
 			sdl_window:close()
 		end
+		
+		-- todo: clean up input and framebuffer as well for stage change
+		
+	end
+	
+	
+	function stage:change_stage(new_stage_name)
+		-- stop the current stage
+		self:stop()
+		
+		-- load the new stage and start it
+		local new_stage = Engine.new(require(new_stage_name), config)
+		new_stage:start()
+		
+		-- if the new stage terminates, restart the current stage
+		self:start()
 	end
 	
 	

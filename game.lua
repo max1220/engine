@@ -38,8 +38,10 @@ local function update_player(dt)
 	elseif engine:key_is_down(input.event_codes.KEY_DOWN) then
 		print("down")
 	elseif engine:key_is_down(input.event_codes.KEY_LEFT) then
+		player.state = "standing_left"
 		player.velocity_x = -player.speed_x
 	elseif engine:key_is_down(input.event_codes.KEY_RIGHT) then
+		player.state = "standing_right"
 		player.velocity_x = player.speed_x
 	end
 
@@ -147,6 +149,9 @@ function game:init()
 		}
 	}
 	
+	
+	
+	-- TODO: move to engine
 	local function transparency_color(db, tr,tg,tb)
 		db:pixel_function(function(x,y,r,g,b,a)
 			if tr == r and tg == g and tb == b then
@@ -157,6 +162,7 @@ function game:init()
 	end
 	
 	transparency_color(player.drawbuffers.standing_right[1], 255,255,255)
+	transparency_color(player.drawbuffers.standing_left[1], 255,255,255)
 	
 	print("loaded game stage!")
 end

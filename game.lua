@@ -62,9 +62,6 @@ local function update_player(dt)
 	if math.abs(player.velocity_x) < 0.01 then
 		player.velocity_x = 0
 	end
-	
-	print("player.velocity_x", player.velocity_x)
-	
 
 	if player.y > player.ground then
 		player.velocity_y = 0

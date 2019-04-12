@@ -3,7 +3,7 @@ local lfb
 local sdl2fb
 local time = require("time")
 local input = require("lua-input")
-
+local bump = require("bump")
 
 
 -- the engine loads a stage, and is responisble for it's interactions with
@@ -43,7 +43,7 @@ function Engine.new(stage, config)
 		end
 	end
 
-	
+
 	-- get upper-left coodinate of a centered box on the terminal
 	local next_update = 0
 	local center_x, center_y
@@ -90,27 +90,29 @@ function Engine.new(stage, config)
 		end
 		return out_db
 	end
-	
-	
+
+
 	-- final output to the terminal
 	local function output_braile(db)
 		local lines = ldb.braile.draw_db_precise(db, config.output.threshold, 45, true, config.output.bpp24)
 		output_lines(lines, math.floor(out_db:width()/2), math.floor(out_db:height()/4))
 	end
-	
+
+
 	-- final output to the terminal
 	local function output_blocks(db)
 		local lines = ldb.blocks.draw_db(db)
 		output_lines(lines, out_db:width(), out_db:height())
 	end
-	
-	
+
+
 	-- final output to the sdl2 window
 	local sdl_window
 	local function output_sdl2(db)
 		sdl_window:draw_from_drawbuffer(db, 0, 0)
 	end
-	
+
+
 	-- final output to the framebuffer
 	local fb_dev
 	local fb_info
@@ -119,7 +121,8 @@ function Engine.new(stage, config)
 		local center_y = math.floor((fb_info.yres-db:height()) / 2)
 		fb_dev:draw_from_drawbuffer(db, center_x, center_y)
 	end
-	
+
+
 	local output
 	if config.output.type == "braile" then
 		output = output_braile
@@ -155,7 +158,34 @@ function Engine.new(stage, config)
 		return db
 	end
 
+
+	-- check each pixel for this color and set alpha of that pixel to 0
+	function stage:apply_transparency_color(db, tr,tg,tb)
+		db:pixel_function(function(x,y,r,g,b,a)
+			if tr == r and tg == g and tb == b then
+				return r,g,b,0
+			end
+			return r,g,b,a
+		end)
+	end
+
+
+	-- crop the drawbuffer, returning a new drawbuffer of the specified with
+	-- TODO: move to lua-db
+	function stage:crop(db, xo, yo, width, height)
+		local new_db = ldb.new(width, height)
+		for y=0, height-1 do
+			for x=0, width-1 do
+				local r,g,b,a = db:get_pixel(x+xo,y+yo)
+				new_db:set_pixel(x,y,r,g,b,a)
+			end
+		end
+		return new_db
+	end
+
+
 	-- loads a font by it's filename
+	-- TODO: move to lua-db
 	function stage:load_font(font_name)
 		local font_config = assert(config.fonts[font_name])
 	
@@ -169,6 +199,7 @@ function Engine.new(stage, config)
 		local font = ldb.font.from_drawbuffer(font_db, font_config.char_w, font_config.char_h, font_config.alpha_color, font_config.scale)
 		return font
 	end
+
 
 	-- check input devices, call appropriate callbacks
 	function stage:_input()
@@ -191,6 +222,7 @@ function Engine.new(stage, config)
 	end
 	
 	
+	-- check if a key is pressed
 	function stage:key_is_down(key)
 		return key_state[key]
 	end
@@ -229,6 +261,44 @@ function Engine.new(stage, config)
 		end
 	end
 
+
+	-- create a new world, including the physics handling
+	function stage:new_world(level, player)
+		local world = {}
+		self.level = level
+		
+		-- store the physics world
+		world.physics_world = bump.newWorld()
+		
+		-- add each collider from the level world data
+		for i, entry in ipairs(level.world_data) do
+			if entry.type == "collider" then
+				world.physics_world:add(entry, entry.x, entry.y, entry.w, entry.h)
+			end
+		end
+		
+		-- add player collider
+		world.physics_world:add(player, player.x, player.y, player.width, player.height)
+		
+		-- (debug) draw the colliders
+		function world:draw(db, scroll_x, scroll_y)
+			for i, entry in ipairs(level.world_data) do
+				local screen_x, screen_y = entry.x + scroll_x, entry.y + scroll_y
+				db:set_box(screen_x, screen_y, entry.w, entry.h, 0,255,0,255)
+			end
+		end
+		
+		-- add a collider to the world
+		function world:add_entry(entry)
+			world.physics_world:add(entry, entry.x, entry.y, entry.w, entry.h)
+			table.insert(world_data, entry)
+		end
+		
+		return world
+	end
+
+
+	-- start the stage, run the loop till termination
 	function stage:start()
 		stage.config = config
 		self:init()
@@ -239,17 +309,21 @@ function Engine.new(stage, config)
 		self:stop()
 	end
 
+
+	--stop the stage, making
 	function stage:stop()
 		self.run = false
 		if sdl_window then
 			sdl_window:close()
+			sdl_window = nil
 		end
 		
 		-- todo: clean up input and framebuffer as well for stage change
 		
 	end
-	
-	
+
+
+	-- change the stage to another stage
 	function stage:change_stage(new_stage_name)
 		-- stop the current stage
 		self:stop()

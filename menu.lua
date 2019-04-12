@@ -34,21 +34,18 @@ local menu_select = 1
 
 local function on_key_up(ev)
 	if ev.value ~= 0 then
-		print("up")
 		menu_select = math.max(menu_select - 1, 1)
 	end
 end
 
 local function on_key_down(ev)
 	if ev.value ~= 0 then
-		print("down")
 		menu_select = math.min(menu_select + 1, #menu)
 	end
 end
 
 local function on_key_enter(ev)
 	if ev.value ~= 0 then
-		print("Selected item number;", menu_select)
 		menu[menu_select][2]()
 	end
 end
@@ -98,8 +95,6 @@ function menu:init()
 	self:set_input_callback(input.event_codes.KEY_ENTER, on_key_enter)
 	
 	engine = self
-	
-	print("loaded menu stage!")
 end
 
 

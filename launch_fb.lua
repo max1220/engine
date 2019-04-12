@@ -3,6 +3,8 @@
 
 package.path = package.path .. ";/root/engine/?.lua"
 os.execute("cd /root/engine")
+os.execute("stty -echo")
+print(("\n"):rep(50))
 
 local engine = require("engine")
 local config = require("config")

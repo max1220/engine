@@ -109,7 +109,9 @@ function Engine.new(stage, config)
 	-- final output to the sdl2 window
 	local sdl_window
 	local function output_sdl2(db)
-		sdl_window:draw_from_drawbuffer(db, 0, 0)
+		if sdl_window then
+			sdl_window:draw_from_drawbuffer(db, 0, 0)
+		end
 	end
 
 
@@ -199,6 +201,187 @@ function Engine.new(stage, config)
 		local font = ldb.font.from_drawbuffer(font_db, font_config.char_w, font_config.char_h, font_config.alpha_color, font_config.scale)
 		return font
 	end
+	
+	
+	-- create drawable tilelayers from a decoded tiled json map
+	function stage:tilemap_from_tiled_json(map, tileset)
+		local tilemap = {}
+		tilemap.tileset = assert(tileset)
+		
+		-- this will hold a list of drawbuffers that contain the layer data for each layer
+		local tile_layers = {}
+		
+		-- add a single layer from the JSON to the tile_layers
+		local max_w, max_h = 0,0
+		local function add_tile_layer(clayer)
+			-- ignore invisible layer
+			if not clayer.visible then
+				return
+			end
+			-- create a drawbuffer that will store the tile data for faster access
+			local layer_db = ldb.new(clayer.width*tileset.tile_w, clayer.height*tileset.tile_h)
+			layer_db:clear(0,0,0,255)
+			
+			local i = 1
+			-- copy tile data from json
+			for y=1, clayer.height do
+				for x=1, clayer.width do
+					local ctileid = clayer.data[i]
+					i = i + 1
+					-- encode the tile id in the red channel of the drawbuffer
+					layer_db:set_pixel(x-1, y-1, ctileid, 0, 0, 255 )
+				end
+			end
+			
+			max_w = math.max(max_w, clayer.width)
+			max_h = math.max(max_h, clayer.height)
+			
+			return layer_db
+		end
+		
+		-- add each layer
+		for i,layer in ipairs(map.layers) do
+			local layer_db = add_tile_layer(layer)
+			table.insert(tile_layers, layer_db)
+		end
+		tilemap.tiles_x = max_w
+		tilemap.tiles_y = max_h
+		
+		tilemap.tile_layers = tile_layers
+		
+		-- get the tile at x,y from each layer
+		function tilemap:get_at(x,y)
+			local tiles = {}
+			for i, layer_db in ipairs(tile_layers) do
+				local r,g,b,a = layer_db:get_pixel(x,y)
+				table.insert(tiles, r)
+			end
+			return tiles
+		end
+		
+		-- draw a single layer starting at x,y
+		function tilemap:draw_layer(target_db, layer_db, x, y)			
+			-- the layer_db contains a pixel for each tile_id in the layer.
+			for source_y=0, layer_db:height()-1 do
+				for source_x=0, layer_db:width()-1 do
+					local r,g,b,a = layer_db:get_pixel(source_x, source_y)
+					if r ~= 0 then
+						tileset.draw_tile(target_db, x+source_x*tileset.tile_w, y+source_y*tileset.tile_h, r)
+					end
+				end
+			end
+			
+		end
+		
+		-- calculate the collision rectangles from the tilemap and the collision map
+		function tilemap:generate_level(collision_cb)
+			local level = {
+					spawn_x = 0,
+					spawn_y = 0,
+					spawn_velocity_x = 0,
+					spawn_velocity_y = 0,
+			}
+			local world_data = {}
+			
+			for source_y=0, max_h-1 do
+				local cline = {}
+				for source_x=0, max_w-1 do
+					local tiles = self:get_at(source_x, source_y)
+					for i, tile in ipairs(tiles) do
+						local collision_class = collision_cb(tile)
+						if collision_class then
+							table.insert(world_data, {
+								type = "collider",
+								class = collision_class,
+								x = source_x*tileset.tile_w,
+								y = source_y*tileset.tile_h,
+								w = tileset.tile_w,
+								h = tileset.tile_h
+							})
+						end
+					end
+				end
+			end
+			level.world_data = world_data
+			
+			return level
+		end
+		
+		-- draw all layers
+		function tilemap:draw(target_db, x, y)
+			for i,layer_db in ipairs(tile_layers) do
+				self:draw_layer(target_db, layer_db, x, y)
+			end
+		end
+		
+		return tilemap
+	end
+	
+	
+	-- load assets
+	function stage:load_assets(assets)
+		local assets_by_name = {}
+		for i, asset in ipairs(assets) do
+			assets_by_name[asset.name] = asset
+			if asset.type == "img" then
+				-- load img in the right format into a new drawbuffer
+				local img_db
+				if asset.file:sub(-4) == ".bmp" then
+					img_db = ldb.bitmap.decode_from_file_drawbuffer("img/" .. asset.file)
+				elseif asset.file:sub(-4) == ".ppm" then
+					img_db = ldb.ppm.decode_from_file_drawbuffer("img/" .. asset.file)
+				elseif asset.file:sub(-4) == ".raw" then
+					local width = assert(asset.width)
+					local height = assert(asset.height)
+					local f = assert(io.open("img/" .. asset.file, "rb"))
+					local c = f:read("*a")
+					f:close()
+					img_db = db.new(width, height)
+					img_db:load_data(c)
+				else
+					img_db = ldb.imlib.from_file("img/" .. asset.file)
+				end
+				assert(img_db)
+				if asset.apply_transparency_color then
+					self:apply_transparency_color(img_db, unpack(asset.apply_transparency_color))
+				end
+				if asset.crop then
+					img_db = self:crop(img_db, unpack(asset.crop))
+				end
+				
+				asset.db = img_db
+			elseif asset.type == "font" then
+				-- get the font source drawbuffer by the assets by name
+				local font_db = assert(assets_by_name[asset.db_name].db)
+				local char_w = assert(tonumber(asset.char_w))
+				local char_h = assert(tonumber(asset.char_h))
+				
+				asset.font = ldb.font.from_drawbuffer(font_db, char_w, char_h, nil, tonumber(asset.scale))
+			elseif asset.type == "tileset" then
+				-- load a tileset
+				local tile_db = assert(assets_by_name[asset.db_name].db)
+				local tile_w = assert(tonumber(asset.tile_w))
+				local tile_h = assert(tonumber(asset.tile_h))
+				
+				local tileset = ldb.tileset.new(tile_db, tile_w, tile_h)
+				
+				asset.tileset = tileset
+			elseif asset.type == "tiled_map" then
+				-- check if file exists
+				local json = require("cjson")
+				local map_json_f = assert(io.open(asset.file, "rb"))
+				local map = json.decode(map_json_f:read("*a"))
+				map_json_f:close()
+				local tileset = assert(assets_by_name[asset.tileset_name].tileset)
+				asset.tileset = tileset
+				asset.tilemap = self:tilemap_from_tiled_json(map, tileset)
+				
+			end
+		end
+		
+		assets.by_name = assets_by_name
+		return assets
+	end
 
 
 	-- check input devices, call appropriate callbacks
@@ -278,7 +461,7 @@ function Engine.new(stage, config)
 		end
 		
 		-- add player collider
-		world.physics_world:add(player, player.x, player.y, player.width, player.height)
+		world.physics_world:add(player, player.x+player.offset_x, player.y+player.offset_y, player.width, player.height)
 		
 		-- (debug) draw the colliders
 		function world:draw(db, scroll_x, scroll_y)

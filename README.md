@@ -15,4 +15,14 @@ For the libraries used(also partially (re-)written for this game jam), see:
 	https://github.com/max1220/lua-fb
 	https://github.com/max1220/lua-input
 	https://github.com/max1220/lua-time
+	lua-cjson for tiled map loading
+	lua-imlib2 for loading .png and others
 	(probably more, TODO)
+
+
+
+TODO
+-----
+ - input via sdl2fb
+ - input via lua-getch
+ - better accuracy for braile pixel color values(use pixel delta)

@@ -15,6 +15,7 @@ local world
 local tileset
 local assets
 local tilemap_db
+local background_color = {170,230,240,255}
 
 -- return the screen coordinates for the given world coordinates
 local function world_to_screen_coords(world_x, world_y)
@@ -74,6 +75,20 @@ local function player_shoot(dt, dx,dy)
 end
 
 
+-- collision filter
+local function colission_filter(item, other)
+	-- print("colission_filter(item, other)", item, other)
+	if other.class == "cloud" then
+		-- print("cloud")
+		return "cross"
+	elseif other.class == "bounce" then
+		return "touch"
+	end
+	
+	return "slide"
+end
+
+
 -- update player position etc. based on physics
 local function update_player(dt)
 
@@ -122,11 +137,18 @@ local function update_player(dt)
 		player.x, player.y, cols, cols_len = world.physics_world:move(player, player.x + player.velocity_x * dt, player.y + player.velocity_y * dt, colission_filter)
 		for i=1, cols_len do
 			local col = cols[i]
-			
+				
 			if col.other.class == "cloud" then
-				print("cloud", player.velocity_y)
-				player.velocity_y = player.velocity_y + 1.05*dt
-			elseif col.normal.y == -1 then			
+				print("cloud")
+				player.velocity_y = player.velocity_y + 10*dt
+			elseif col.other.class == "box" then
+				if col.normal.y and col.normal.y == 1 then
+					print("box hit")
+				end
+			elseif col.other.class == "bouncer" then
+				player.velocity_y = -100
+			end
+			if col.normal.y == -1 then			
 				player.is_on_ground = true
 				player.velocity_y = 0
 			elseif col.normal.y == 1 then
@@ -136,9 +158,7 @@ local function update_player(dt)
 			if col.normal.x ~= 0 then
 				player.velocity_x = 0
 			end
-			
-			
-			
+				
 			-- print(("col.other = %s, col.type = %s, col.normal = %d,%d"):format(col.other, col.type, col.normal.x, col.normal.y))
 		end
 	end
@@ -173,6 +193,15 @@ local function draw_bullets(db)
 end
 
 
+local function draw_bg(db)
+	local r,g,b,a = unpack(background_color)
+	db:clear(r,g,b,a)
+	for i=0, 8 do
+		db:set_rectangle(0, height-(8-i)*5, width, 5, r-5*i,g-5*i,b-5*i,a)
+	end
+end
+
+
 -- called when the calculations should be done
 function game:update(dt)
 	fps = 1/dt
@@ -195,7 +224,7 @@ layer_db:clear(66,0,0,255)
 
 -- called when the image is about to be drawn with the output drawbuffer
 function game:draw(db)
-	db:clear(170,230,240,255)
+	draw_bg(db)
 	
 	-- draw player
 	draw_player(db)
@@ -205,8 +234,8 @@ function game:draw(db)
 	
 	tilemap_db:draw_to_drawbuffer(db, 0,0, -scroll_x, -scroll_y, width, height)
 	
-	-- draw the physics world
-	-- world:draw(db, scroll_x, scroll_y)
+	-- draw the physics world(debug!)
+	-- world:draw(db, scroll_x, -scroll_y)
 	
 	-- draw ui ontop
 	font:draw_string(db, (" FPS: %.3f "):format(fps), 0, 0)
@@ -254,7 +283,9 @@ function game:init()
 		{
 			type = "img",
 			name = "tileset_img",
-			file = "tileset2.png"
+			file = "tileset2.png",
+			width = 64,
+			height = 128
 		},
 		
 		-- other images(fonts etc.)
@@ -312,7 +343,7 @@ function game:init()
 		can_shoot = true,
 		velocity_y = level.spawn_velocity_x,
 		velocity_x = level.spawn_velocity_y,
-		speed_x = 40,
+		speed_x = 60,
 		dir = "right",
 		jump_height = 60,
 		gravity = 55,
@@ -357,26 +388,30 @@ function game:init()
 	assets.by_name.map.tilemap:draw(tilemap_db, 0, 0)
 	
 	local colliders = {}
-	for k,v in ipairs({11, 19, 51, 52, 53, 54, 55, 60, 61, 62, 63, 67, 69, 70, 71}) do
-		colliders[v+1] = "none"
+	
+	local ground_colliders = {}
+	for i=0, 50 do -- first 51 tileids are ground
+		table.insert(ground_colliders, i)
+	end
+	for _, v in ipairs({56,57,58,64,65,66 }) do -- add extra ground tiles
+		table.insert(ground_colliders, v)
+	end
+	for k,v in ipairs(ground_colliders) do
+		colliders[v+1] = "ground"
 	end
 	colliders[73] = "cloud"
 	colliders[74] = "cloud"
+	colliders[75] = "cloud"
+	colliders[69] = "box"
+	colliders[77] = "box"
+	colliders[81] = "bouncer"
+	
 	world = self:new_world(assets.by_name.map.tilemap:generate_level(function(tileid)
 		if tileid == 0 or colliders[tileid] == "none" then
 			return
 		end
-		return colliders[tileid] or "unset"
+		return colliders[tileid] or "none"
 	end), player)
-	
-	
-	-- todo: build asset loader
-	--[[
-	player.drawbuffers.standing_right[1] = self:crop(player.drawbuffers.standing_right[1], 11,6, 10,24)
-	player.drawbuffers.standing_left[1] = self:crop(player.drawbuffers.standing_left[1], 11,6, 10,24)
-	player.drawbuffers.walking_left[1] = self:crop(player.drawbuffers.walking_left[1], 8,6, 10,24)
-	player.drawbuffers.walking_right[1] = self:crop(player.drawbuffers.walking_right[1], 14,6, 10,24)
-	]]
 	
 end
 

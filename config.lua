@@ -1,11 +1,11 @@
 return {
 	output = {
-		type = "braile", -- braile, blocks, sdl2fb, fb=/dev/fb0
+		type = "sdl2fb", -- braile, blocks, sdl2fb, fb=/dev/fb0
 		bpp24 = true, -- for braile/blocks: output in 24bpp or in 216-colors
 		threshold = 45, -- for braile: set the threshold value for a pixel to be drawn using braile character
-		width = 200,
-		height = 100,
-		scale = 1, -- required width, height will double
+		width = 160,
+		height = 120,
+		scale = 4, -- required width, height will double
 		target_dt = 1/30 -- if the FPS is higher than this, insert some sleeps to reduce the CPU load
 	},
 	input = {

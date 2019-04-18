@@ -32,10 +32,21 @@ function Engine.new(stage, config)
 			end
 		end
 	end
+	
+	
+	-- utillity function to add the content of the second table to the first
+	local function t_merge(target, append)
+		for k,v in ipairs(append) do
+			table.insert(target, v)
+		end
+		return target
+	end
 
 
-	-- open input devices
+	
 	local input_devs = {}
+	
+	-- open input devices
 	for k, input_dev_config in ipairs(config.input) do
 		if input_dev_config.type == "keyboard" and input_dev_config.driver == "uinput" then
 			local dev = assert(input.open(input_dev_config.dev, true))
@@ -125,28 +136,34 @@ function Engine.new(stage, config)
 	end
 
 
+	-- create an appropriate output context
 	local output
-	if config.output.type == "braile" then
-		output = output_braile
-	elseif config.output.type == "blocks" then
-		output = output_blocks
-	elseif config.output.type:match("^fb=(.*)$") then
-		lfb = require("lua-fb")
-		fb_dev = lfb.new(config.output.type:match("^fb=(.*)$"))
-		fb_info = fb_dev:get_varinfo()
-		output = output_fb
-	elseif config.output.type == "sdl2fb" then
-		sdl2fb = require("sdl2fb")
-		sdl_window = sdl2fb.new(config.output.width*config.output.scale, config.output.height*config.output.scale, "engine")
-		output = output_sdl2
-	else
-		error("Unsupported output! Check config")
+	local function open_output()
+		if config.output.type == "braile" then
+			output = output_braile
+		elseif config.output.type == "blocks" then
+			output = output_blocks
+		elseif config.output.type:match("^fb=(.*)$") then
+			lfb = require("lua-fb")
+			fb_dev = lfb.new(config.output.type:match("^fb=(.*)$"))
+			fb_info = fb_dev:get_varinfo()
+			output = output_fb
+		elseif config.output.type == "sdl2fb" then
+			sdl2fb = require("sdl2fb")
+			if not sdl_window then
+				sdl_window = sdl2fb.new(config.output.width*config.output.scale, config.output.height*config.output.scale, "engine")
+				print("new sdl_window", sdl_window)
+			end
+			output = output_sdl2
+		else
+			error("Unsupported output! Check config")
+		end
 	end
-	
+
 
 	-- load an image by file name(determine decoder automatically)
 	local img_cache = {}
-	function stage:load_img(file_path)
+	function stage:load_img(file_path, width, height)
 		if img_cache[file_path] then
 			return img_cache[file_path]
 		end
@@ -156,6 +173,8 @@ function Engine.new(stage, config)
 			db = ldb.bitmap.decode_from_file_drawbuffer("img/" .. file_path)
 		elseif file_type == ".ppm" then
 			db = ldb.ppm.decode_from_file_drawbuffer("img/" .. file_path)
+		elseif file_type == ".raw" then
+			db = ldb.raw.decode_from_file_drawbuffer("img/" .. file_path, width, height)
 		end
 		return db
 	end
@@ -249,12 +268,18 @@ function Engine.new(stage, config)
 		
 		tilemap.tile_layers = tile_layers
 		
+		-- return the tile id at the layerdb x,y
+		function tilemap:get_at_layer(layer_db, x, y)
+			local r,g,b,a = layer_db:get_pixel(x,y)
+			return r
+		end
+		
 		-- get the tile at x,y from each layer
 		function tilemap:get_at(x,y)
 			local tiles = {}
 			for i, layer_db in ipairs(tile_layers) do
-				local r,g,b,a = layer_db:get_pixel(x,y)
-				table.insert(tiles, r)
+				local tileid = self:get_at_layer(layer_db, x, y)
+				table.insert(tiles, tileid)
 			end
 			return tiles
 		end
@@ -273,6 +298,33 @@ function Engine.new(stage, config)
 			
 		end
 		
+		
+		-- generate a world_data segment for a level from a layer_db
+		function tilemap:generate_world_data_layer(layer_db, collision_cb)
+			local world_data = {}
+			
+			for source_y=0, max_h-1 do
+				local cline = {}
+				for source_x=0, max_w-1 do
+					local tile = self:get_at_layer(layer_db, source_x, source_y)
+					local collision_class = collision_cb(tile)
+					if collision_class and (collision_class ~= "none") then
+						table.insert(world_data, {
+							type = "collider",
+							class = collision_class,
+							x = source_x*tileset.tile_w,
+							y = source_y*tileset.tile_h,
+							w = tileset.tile_w,
+							h = tileset.tile_h
+						})
+					end
+				end
+			end
+			
+			return world_data
+		end
+		
+		
 		-- calculate the collision rectangles from the tilemap and the collision map
 		function tilemap:generate_level(collision_cb)
 			local level = {
@@ -283,25 +335,10 @@ function Engine.new(stage, config)
 			}
 			local world_data = {}
 			
-			for source_y=0, max_h-1 do
-				local cline = {}
-				for source_x=0, max_w-1 do
-					local tiles = self:get_at(source_x, source_y)
-					for i, tile in ipairs(tiles) do
-						local collision_class = collision_cb(tile)
-						if collision_class then
-							table.insert(world_data, {
-								type = "collider",
-								class = collision_class,
-								x = source_x*tileset.tile_w,
-								y = source_y*tileset.tile_h,
-								w = tileset.tile_w,
-								h = tileset.tile_h
-							})
-						end
-					end
-				end
+			for i, layer_db in ipairs(tile_layers) do
+				t_merge(world_data, self:generate_world_data_layer(layer_db, collision_cb))
 			end
+			
 			level.world_data = world_data
 			
 			return level
@@ -336,7 +373,7 @@ function Engine.new(stage, config)
 					local f = assert(io.open("img/" .. asset.file, "rb"))
 					local c = f:read("*a")
 					f:close()
-					img_db = db.new(width, height)
+					img_db = ldb.new(width, height)
 					img_db:load_data(c)
 				else
 					img_db = ldb.imlib.from_file("img/" .. asset.file)
@@ -482,7 +519,14 @@ function Engine.new(stage, config)
 
 
 	-- start the stage, run the loop till termination
-	function stage:start()
+	function stage:start(_sdl_window)
+		if _sdl_window then
+			print("start: got old _sdl_window", _sdl_window)
+			sdl_window = _sdl_window
+		end
+		
+		open_output()
+		
 		stage.config = config
 		self:init()
 		self.run = true
@@ -497,8 +541,8 @@ function Engine.new(stage, config)
 	function stage:stop()
 		self.run = false
 		if sdl_window then
-			sdl_window:close()
-			sdl_window = nil
+			-- sdl_window:close()
+			-- sdl_window = nil
 		end
 		
 		-- todo: clean up input and framebuffer as well for stage change
@@ -507,16 +551,18 @@ function Engine.new(stage, config)
 
 
 	-- change the stage to another stage
-	function stage:change_stage(new_stage_name)
+	function stage:change_stage(new_stage_name, restart)
 		-- stop the current stage
 		self:stop()
 		
 		-- load the new stage and start it
 		local new_stage = Engine.new(require(new_stage_name), config)
-		new_stage:start()
+		new_stage:start(sdl_window)
 		
-		-- if the new stage terminates, restart the current stage
-		self:start()
+		-- should we restart the starge if the new stage terminates?
+		if restart then
+			self:start(sdl_window)
+		end
 	end
 	
 	

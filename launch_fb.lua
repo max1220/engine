@@ -11,9 +11,7 @@ local config = require("config")
 
 -- overwrite fb config value
 config.output.type = "fb=/dev/fb0"
-config.output.width = 320
-config.output.height = 240
-config.output.scale = 3
+config.output.scale = 5
 
 -- load the entry point from the config
 local entry = require("menu")

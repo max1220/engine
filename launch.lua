@@ -1,8 +1,6 @@
 #!/usr/bin/env luajit
-
 package.path = "./?.lua;./?/init.lua;" .. package.path
 package.cpath = "./?.so;" .. package.cpath
-
 
 local engine = require("engine")
 local config = require("config")

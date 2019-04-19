@@ -9,6 +9,7 @@ local title_speed = 10 -- in pixels per second
 local width, height
 local engine
 local running = 0
+local credits = false
 local titlescreen_timeout = 3
 
 local logo_db
@@ -23,15 +24,9 @@ local menu = {
 		end
 	},
 	{
-		"Setup",
-		function()
-			print("setup selected")
-		end
-	},
-	{
 		"Credits",
 		function()
-			print("credits selected")
+			credits = true
 		end
 	},
 	{
@@ -57,6 +52,7 @@ local function on_key_down(ev)
 end
 
 local function on_key_enter(ev)
+	credits = false
 	if ev.value ~= 0 then
 		menu[menu_select][2]()
 	end
@@ -111,11 +107,18 @@ function hslToRgb(h, s, l)
 end
 
 
+local stars = {}
 
 
 -- called when the image is about to be drawn with the output drawbuffer
 function menu:draw(db)
-	if running >= titlescreen_timeout then
+	if credits then
+		db:clear(0,0,0,255)
+		font:draw_string(db, "Nobody helped me :(", 0, 0)
+		font:draw_string(db, "Graphics: max1220", 0, 16)
+		font:draw_string(db, "Code: max1220", 0, 32)
+		font:draw_string(db, "Idea: max1220", 0, 48)
+	elseif running >= titlescreen_timeout then
 		db:clear(0,0,0,255)
 		font_lg:draw_string(db, title, math.floor(title_x), 0)
 		db:set_line(0, 16, width-1, 16, 255,0,0,255)
@@ -127,8 +130,17 @@ function menu:draw(db)
 		db:set_line(8, 48+(menu_select-1)*16, width-1, 48+(menu_select-1)*16, 0,255,0,255)
 	else
 		local pct = running / titlescreen_timeout
-		local g = math.floor(pct*255)
-		db:clear(g,g,g,255)
+		local r,g,b = 170,230,240
+		db:clear(r*(1-pct*pct),g*(1-pct*pct),b*(1-pct*pct),255)
+		
+		for i, star in ipairs(stars) do
+			local x,y = unpack(star)
+			if pct > 0.5 then
+				local b = (((pct*100+i)%1)*0.25)+0.75
+				db:set_pixel(x,y,224*b,255*b,255*b, 255)
+			end
+		end
+		
 		
 		local scale = 2
 		local target_x = math.floor((width-scale*logo_db:width())/2)
@@ -139,7 +151,7 @@ function menu:draw(db)
 		db:set_rectangle(0, height*(5/6), width, height*(4/6), r,g,b,255)
 		
 		if pct < 0.5 then
-			font_lg:draw_string(db, "FOR LGJ", 0, height-16)
+			font_lg:draw_string(db, "FOR LGJ'19", 0, height-16)
 		else
 			font_lg:draw_string(db, "BY MAX1220", 0, height-16)
 		end
@@ -159,6 +171,15 @@ function menu:init()
 	title_width = font_lg:string_size(title)
 	
 	width, height = self.config.output.width, self.config.output.height
+	
+	
+	for i=1, 20 do
+		table.insert(stars, {
+			math.random(0, width),
+			math.random(0, height)
+		})
+	end
+	
 	
 	self:set_input_callback(input.event_codes.KEY_UP, on_key_up)
 	self:set_input_callback(input.event_codes.KEY_DOWN, on_key_down)

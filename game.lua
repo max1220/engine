@@ -11,7 +11,7 @@ local fps
 local player
 local scroll_x, scroll_y = 0,0
 local max_scroll_y = 0
-local min_scroll_y = -500
+local min_scroll_y = 0
 local scroll_speed = 50
 local world
 local tileset
@@ -304,17 +304,16 @@ local function draw_bg(db)
 	local r,g,b,a = unpack(background_color)
 	db:clear(r,g,b,a)
 	
-	for i, cloud in ipairs(clouds) do
-		assets.by_name.clouds_tiles.tileset.draw_tile(db, cloud.x+scroll_x/2, cloud.y+scroll_y/8, cloud.tile_id, 2)
-	end
-	
-	local bar_h = math.min(math.floor(scroll_y/3 + 40), 8)
-	
+	-- draw bottom indicator
 	local scroll_pct = ((-scroll_y) / height) * 16
-	bar_h = math.floor(scroll_pct)
-	
+	local bar_h = math.floor(scroll_pct)
 	for i=0, 8 do
 		db:set_rectangle(0, height-(8-i)*bar_h, width, bar_h, r-5*i,g-5*i,b-5*i,a)
+	end
+	
+	-- draw clouds
+	for i, cloud in ipairs(clouds) do
+		assets.by_name.clouds_tiles.tileset.draw_tile(db, cloud.x+scroll_x/2, cloud.y+scroll_y/8, cloud.tile_id, 2)
 	end
 end
 
@@ -373,7 +372,7 @@ function game:update(dt)
 	fps = 1/dt
 	update_player(dt)
 	scroll_x = -(player.x) + (width/2)
-	scroll_y = math.max(math.min(-(player.y) + (height/2), max_scroll_y), min_scroll_y)
+	scroll_y = math.max(math.min(-(player.y) + (height/2), 0), min_scroll_y+height)
 	
 	player.runtime = player.runtime + dt
 	
@@ -392,10 +391,6 @@ function game:update(dt)
 	-- print(("fps: %.1d    "):format(fps))
 end
 
-
-
-local layer_db = ldb.new(10,10)
-layer_db:clear(66,0,0,255)
 
 -- called when the image is about to be drawn with the output drawbuffer
 function game:draw(db)

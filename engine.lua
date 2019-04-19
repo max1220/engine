@@ -79,9 +79,12 @@ function Engine.new(stage, config)
 
 	-- output a list of lines as returned by braile/blocks
 	local function output_lines(lines, w, h)
-		local center_x, center_y = get_center(w, h)
+		local cursor_x, cursor_y = 0,0
+		if config.output.center then
+			cursor_x, cursor_y = get_center(w, h)
+		end
 		for i, line in ipairs(lines) do
-			io.write(ldb.term.set_cursor(center_x, center_y+i-1))
+			io.write(ldb.term.set_cursor(cursor_x, cursor_y+i-1))
 			io.write(line)
 			io.write(ldb.term.reset_color())
 			io.write("\n")
@@ -230,6 +233,11 @@ function Engine.new(stage, config)
 		-- this will hold a list of drawbuffers that contain the layer data for each layer
 		local tile_layers = {}
 		
+		-- set the tile_id in the layer at x,y
+		local function set_at(layer_db, x, y, tile_id)
+			layer_db:set_pixel(x, y, tile_id, 0, 0, 255 )
+		end
+		
 		-- add a single layer from the JSON to the tile_layers
 		local max_w, max_h = 0,0
 		local function add_tile_layer(clayer)
@@ -248,7 +256,7 @@ function Engine.new(stage, config)
 					local ctileid = clayer.data[i]
 					i = i + 1
 					-- encode the tile id in the red channel of the drawbuffer
-					layer_db:set_pixel(x-1, y-1, ctileid, 0, 0, 255 )
+					set_at(layer_db, x-1, y-1, ctileid)
 				end
 			end
 			
@@ -268,10 +276,65 @@ function Engine.new(stage, config)
 		
 		tilemap.tile_layers = tile_layers
 		
+		local function add_collider(world_data, collision_class, x, y, world)
+			if collision_class and (collision_class ~= "none") then
+				local collider = {
+					type = "collider",
+					class = collision_class,
+					x = x*tileset.tile_w,
+					y = y*tileset.tile_h,
+					w = tileset.tile_w,
+					h = tileset.tile_h
+				}
+				table.insert(world_data, collider)
+				if world then
+					world.physics_world:add(collider, collider.x, collider.y, collider.w, collider.h)
+				end
+			end
+		end
+		
+		function tilemap:set_at_layer(layer_db, x, y, tile_id, world)
+			set_at(layer_db, x, y, tile_id)
+			
+			self.dirty = true
+			
+			-- also update world_data
+			if world then
+				-- update colliders in world data
+				local colliders = self:get_colliders_at(world.level.world_data, x, y)
+				
+				print("\n\ngot colliders: ".. #colliders.."        "..x.." "..y.."        ")
+				
+				-- remove old colliders
+				for i, collider in ipairs(colliders) do
+					world.physics_world:remove(collider)
+					table.remove(colliders, i)
+				end
+				
+				-- recalculate new colliders
+				local collision_class = world.level.world_data.collision_cb(tile_id)
+				add_collider(world_data, collision_class, x, y, world)
+				print("got new collision_class:", collision_class)
+				
+				-- TODO: only remove+recalculate colliders if type changed
+			end
+		end
+		
 		-- return the tile id at the layerdb x,y
 		function tilemap:get_at_layer(layer_db, x, y)
 			local r,g,b,a = layer_db:get_pixel(x,y)
 			return r
+		end
+		
+		-- get the collider entries in the world data that match the coordinates
+		function tilemap:get_colliders_at(world_data, x,y)
+			local colliders = {}
+			for i, collider in ipairs(world_data) do
+				if (collider.x == x*tileset.tile_w) and (collider.y == y*tileset.tile_h) then
+					table.insert(colliders, collider)
+				end
+			end
+			return colliders
 		end
 		
 		-- get the tile at x,y from each layer
@@ -308,16 +371,7 @@ function Engine.new(stage, config)
 				for source_x=0, max_w-1 do
 					local tile = self:get_at_layer(layer_db, source_x, source_y)
 					local collision_class = collision_cb(tile)
-					if collision_class and (collision_class ~= "none") then
-						table.insert(world_data, {
-							type = "collider",
-							class = collision_class,
-							x = source_x*tileset.tile_w,
-							y = source_y*tileset.tile_h,
-							w = tileset.tile_w,
-							h = tileset.tile_h
-						})
-					end
+					add_collider(world_data, collision_class, source_x, source_y)
 				end
 			end
 			
@@ -334,11 +388,12 @@ function Engine.new(stage, config)
 					spawn_velocity_y = 0,
 			}
 			local world_data = {}
-			
+
 			for i, layer_db in ipairs(tile_layers) do
 				t_merge(world_data, self:generate_world_data_layer(layer_db, collision_cb))
 			end
 			
+			world_data.collision_cb = collision_cb
 			level.world_data = world_data
 			
 			return level
@@ -376,6 +431,7 @@ function Engine.new(stage, config)
 					img_db = ldb.new(width, height)
 					img_db:load_data(c)
 				else
+					print("Trying to load unknown image format using imlib2:", asset.file)
 					img_db = ldb.imlib.from_file("img/" .. asset.file)
 				end
 				assert(img_db)
@@ -485,7 +541,7 @@ function Engine.new(stage, config)
 	-- create a new world, including the physics handling
 	function stage:new_world(level, player)
 		local world = {}
-		self.level = level
+		world.level = level
 		
 		-- store the physics world
 		world.physics_world = bump.newWorld()

@@ -20,7 +20,7 @@ function Engine.new(stage, config)
 	-- called when an input is received from a uinput keyboard
 	local key_state = {}
 	local input_callbacks = {}
-	local function handle_uinput_keyboard_ev(ev, config)
+	local function handle_uinput_keyboard_ev(ev)
 		if ev.type == input.event_codes.EV_KEY then
 			if input_callbacks[ev.code] then
 				input_callbacks[ev.code](ev)
@@ -30,6 +30,32 @@ function Engine.new(stage, config)
 			else
 				key_state[ev.code] = nil
 			end
+		end
+	end
+	
+	
+	local sdl_to_uinput = {
+		-- TODO
+		["Left"] = input.event_codes.KEY_LEFT,
+		["Right"] = input.event_codes.KEY_RIGHT,
+		["Up"] = input.event_codes.KEY_UP,
+		["Down"] = input.event_codes.KEY_DOWN,
+		["Space"] = input.event_codes.KEY_SPACE,
+		["Return"] = input.event_codes.KEY_ENTER
+	}
+	local function handle_sdl_event(ev)
+		if ev.type == "keyup" then
+			handle_uinput_keyboard_ev({
+				type = input.event_codes.EV_KEY,
+				code = sdl_to_uinput[ev.key],
+				value = 0
+			})
+		elseif ev.type == "keydown" then
+			handle_uinput_keyboard_ev({
+				type = input.event_codes.EV_KEY,
+				code = sdl_to_uinput[ev.key],
+				value = 1
+			})
 		end
 	end
 	
@@ -96,13 +122,12 @@ function Engine.new(stage, config)
 	-- called with the final drawbuffer that should be scaled and displayed
 	local _scaled_db
 	local function scale_db(db)
-		local out_db = db
 		if config.output.scale then
 			_scaled_db = _scaled_db or ldb.new(config.output.width * config.output.scale, config.output.height * config.output.scale)
 			db:draw_to_drawbuffer(_scaled_db, 0, 0, 0, 0, db:width(), db:height(), config.output.scale)
-			out_db = _scaled_db
+			return _scaled_db
 		end
-		return out_db
+		return db
 	end
 
 
@@ -228,13 +253,16 @@ function Engine.new(stage, config)
 	-- create drawable tilelayers from a decoded tiled json map
 	function stage:tilemap_from_tiled_json(map, tileset)
 		local tilemap = {}
+		local _self = self
 		tilemap.tileset = assert(tileset)
 		
 		-- this will hold a list of drawbuffers that contain the layer data for each layer
 		local tile_layers = {}
+		local tile_layers_dirty = {}
 		
 		-- set the tile_id in the layer at x,y
 		local function set_at(layer_db, x, y, tile_id)
+			tile_layers_dirty[layer_db] = true
 			layer_db:set_pixel(x, y, tile_id, 0, 0, 255 )
 		end
 		
@@ -263,6 +291,7 @@ function Engine.new(stage, config)
 			max_w = math.max(max_w, clayer.width)
 			max_h = math.max(max_h, clayer.height)
 			
+			tile_layers_dirty[layer_db] = true
 			return layer_db
 		end
 		
@@ -296,15 +325,11 @@ function Engine.new(stage, config)
 		function tilemap:set_at_layer(layer_db, x, y, tile_id, world)
 			set_at(layer_db, x, y, tile_id)
 			
-			self.dirty = true
-			
 			-- also update world_data
 			if world then
 				-- update colliders in world data
 				local colliders = self:get_colliders_at(world.level.world_data, x, y)
-				
-				print("\n\ngot colliders: ".. #colliders.."        "..x.." "..y.."        ")
-				
+								
 				-- remove old colliders
 				for i, collider in ipairs(colliders) do
 					world.physics_world:remove(collider)
@@ -313,10 +338,18 @@ function Engine.new(stage, config)
 				
 				-- recalculate new colliders
 				local collision_class = world.level.world_data.collision_cb(tile_id)
-				add_collider(world_data, collision_class, x, y, world)
-				print("got new collision_class:", collision_class)
+				add_collider(world.level.world_data, collision_class, x, y, world)
 				
 				-- TODO: only remove+recalculate colliders if type changed
+			end
+		end
+		
+		-- replace the tile_id at x,y with new_tile_id
+		function tilemap:replace_tileid_at(x, y, tile_id, new_tile_id, world)
+			for i, layer_db in ipairs(self.tile_layers) do
+				if tile_id == self:get_at_layer(layer_db, x, y) then
+					self:set_at_layer(layer_db, x, y, new_tile_id, world)
+				end
 			end
 		end
 		
@@ -348,17 +381,22 @@ function Engine.new(stage, config)
 		end
 		
 		-- draw a single layer starting at x,y
-		function tilemap:draw_layer(target_db, layer_db, x, y)			
+		function tilemap:draw_layer(target_db, layer_db, x, y, tile_subst_table)
+			tile_layers_dirty[layer_db] = false
 			-- the layer_db contains a pixel for each tile_id in the layer.
 			for source_y=0, layer_db:height()-1 do
 				for source_x=0, layer_db:width()-1 do
+					
 					local r,g,b,a = layer_db:get_pixel(source_x, source_y)
 					if r ~= 0 then
-						tileset.draw_tile(target_db, x+source_x*tileset.tile_w, y+source_y*tileset.tile_h, r)
+						if tile_subst_table and tile_subst_table[r] then
+							tileset.draw_tile(target_db, x+source_x*tileset.tile_w, y+source_y*tileset.tile_h, tile_subst_table[r])
+						else
+							tileset.draw_tile(target_db, x+source_x*tileset.tile_w, y+source_y*tileset.tile_h, r)
+						end
 					end
 				end
 			end
-			
 		end
 		
 		
@@ -370,7 +408,7 @@ function Engine.new(stage, config)
 				local cline = {}
 				for source_x=0, max_w-1 do
 					local tile = self:get_at_layer(layer_db, source_x, source_y)
-					local collision_class = collision_cb(tile)
+					local collision_class = collision_cb(tile, source_x, source_y)
 					add_collider(world_data, collision_class, source_x, source_y)
 				end
 			end
@@ -404,6 +442,33 @@ function Engine.new(stage, config)
 			for i,layer_db in ipairs(tile_layers) do
 				self:draw_layer(target_db, layer_db, x, y)
 			end
+		end
+		
+		-- draw updates to a (new) buffer table
+		function tilemap:draw_to_buffers(buffers, tile_subst_table)
+			
+			if self.dirty then
+				for i,layer_db in ipairs(tile_layers) do
+					tile_layers_dirty[layer_db] = true
+				end
+				self.dirty = false
+			end
+			
+			local buffers = buffers or {}
+			for i,layer_db in ipairs(tile_layers) do
+				if (not buffers[i]) or tile_layers_dirty[layer_db] then
+					local start = time.realtime()
+					local target_db = ldb.new(max_w * tileset.tile_w, max_h * tileset.tile_h)
+					target_db:clear(0,0,0,0)
+					self:draw_layer(target_db, layer_db, 0,0, tile_subst_table)
+					buffers[i] = target_db
+					tile_layers_dirty[layer_db] = false
+					break
+					-- print("redraw took:", (time.realtime()-start)*1000)
+				end
+			end
+		
+			return buffers
 		end
 		
 		return tilemap
@@ -493,6 +558,8 @@ function Engine.new(stage, config)
 			local ev = sdl_window:pool_event()
 			if ev and ev.type == "quit" then
 				self.run = false
+			elseif ev then
+				handle_sdl_event(ev)
 			end
 		end
 	end
@@ -518,22 +585,27 @@ function Engine.new(stage, config)
 	function stage:_loop()
 		local last_update = time.realtime()
 		while self.run do
-			-- check inputs, call input callbacks
-			self:_input()
-			
 			-- get delta time, call update callback
 			local dt = time.realtime() - last_update
 			last_update = time.realtime()
+			
+			local remaining_time = self.config.output.target_dt - dt
+			if remaining_time > (3/1000) then
+				time.sleep(remaining_time-(2/1000))
+			end
+			
 			self:update(dt)
 			
-			-- call draw callback
+			self:_input()
 			self:draw(out_db)
 			
 			-- scale drawbuffer if necesarry
-			local scaled = scale_db(out_db)			
+			local scaled = scale_db(out_db)
 			
 			-- output updated buffer
 			output(scaled)
+			
+			
 		end
 	end
 

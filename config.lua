@@ -7,7 +7,7 @@ return {
 		width = 160,
 		height = 120,
 		scale = 5, -- required width, height will double
-		target_dt = 1/30, -- if the FPS is higher than this, insert some sleeps to reduce the CPU load
+		target_dt = 1/60, -- if the FPS is higher than this, insert some sleeps to reduce the CPU load
 		always_night = false -- Night mode
 	},
 	input = {},

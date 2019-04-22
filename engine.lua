@@ -47,13 +47,13 @@ function Engine.new(stage, config)
 		if ev.type == "keyup" then
 			handle_uinput_keyboard_ev({
 				type = input.event_codes.EV_KEY,
-				code = sdl_to_uinput[ev.key],
+				code = sdl_to_uinput[ev.key] or 0,
 				value = 0
 			})
 		elseif ev.type == "keydown" then
 			handle_uinput_keyboard_ev({
 				type = input.event_codes.EV_KEY,
-				code = sdl_to_uinput[ev.key],
+				code = sdl_to_uinput[ev.key] or 0,
 				value = 1
 			})
 		end

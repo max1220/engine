@@ -674,6 +674,7 @@ function game:draw(db)
 	assets.by_name.tileset.tileset.draw_tile(db, 0,8, 108)
 	
 	font:draw_string(db, time_remaining_str, width-48, 0)
+	font:draw_string(db, (" %3d"):format(fps), width-32, 9)
 end
 
 

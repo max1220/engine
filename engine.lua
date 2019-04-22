@@ -588,10 +588,10 @@ function Engine.new(stage, config)
 			-- get delta time, call update callback
 			local dt = time.realtime() - last_update
 			last_update = time.realtime()
-			
 			local remaining_time = self.config.output.target_dt - dt
-			if remaining_time > (3/1000) then
-				time.sleep(remaining_time-(2/1000))
+			if (remaining_time) > (1/1000) then
+				time.sleep(remaining_time)
+				dt = dt + remaining_time
 			end
 			
 			self:update(dt)

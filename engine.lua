@@ -585,26 +585,28 @@ function Engine.new(stage, config)
 	function stage:_loop()
 		local last_update = time.realtime()
 		while self.run do
-			-- get delta time, call update callback
-			local dt = time.realtime() - last_update
-			last_update = time.realtime()
+			-- get delta time, sleep if dt > target_dt
+			local loop_start = time.realtime()
+			local dt = loop_start - last_update
 			local remaining_time = self.config.output.target_dt - dt
 			if (remaining_time) > (1/1000) then
 				time.sleep(remaining_time)
-				dt = dt + remaining_time
+				dt = (time.realtime() - loop_start) + (loop_start - last_update)
 			end
+			last_update = time.realtime()
 			
+			-- call stage update callback
 			self:update(dt)
 			
+			-- handle input & draw output
 			self:_input()
 			self:draw(out_db)
 			
-			-- scale drawbuffer if necesarry
+			-- scale drawbuffer if necesarry(Does not scale if not needed)
 			local scaled = scale_db(out_db)
 			
-			-- output updated buffer
+			-- output updated buffer(output function selected based on config)
 			output(scaled)
-			
 			
 		end
 	end
